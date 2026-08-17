@@ -9,6 +9,7 @@ from docx import Document
 from pypdf import PdfReader
 from openpyxl import load_workbook
 from pptx import Presentation
+import sqlite3
 
 @dataclass
 class SharePointFile:
@@ -22,11 +23,6 @@ class SharePointFile:
     created_at: str
     modified_at: str
     parent_id: str
-
-@dataclass
-class DocumentText:
-    file_id: str
-    filename: str
     text: str
 
 load_dotenv()
@@ -38,6 +34,30 @@ CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 
 AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
 SCOPES = ["https://graph.microsoft.com/.default"]
+
+connection = sqlite3.connect("sharpoint.db")
+
+cursor = connection.cursor()
+
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS documents (
+        id TEXT PRIMARY KEY,
+        site_id TEXT NOT NULL,
+        drive_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        mime_type TEXT,
+        size INTEGER,
+        web_url TEXT,
+        created_at TEXT,
+        modified_at TEXT,
+        parent_id TEXT,
+        text TEXT
+    )
+""")
+
+connection.commit()
+
+
 
 app = ConfidentialClientApplication(
     CLIENT_ID,
@@ -136,7 +156,6 @@ def process_root(rootId):
         headers=headers
     )
     data = response.json()["value"]
-
     for item in data:
         if "folder" in item:
             print("Ordner:", item["name"])
@@ -144,8 +163,11 @@ def process_root(rootId):
 
         elif "file" in item:
             print("Datei:", item["name"])
+            process_file(rootId, item["id"])
     
 def process_folder(rootId, folderId):
+    meta_Data = []
+    docuemtn_Content = []
     response = requests.get(
         f"https://graph.microsoft.com/v1.0/sites/{it_ressort_site_id}/drives/{rootId}/items/{folderId}/children",
         headers=headers
@@ -154,11 +176,20 @@ def process_folder(rootId, folderId):
     for item in data:
         if "folder" in item:
             print("process folder", item["name"])
-            process_folder(rootId, item["id"])
+            sub_meta, sub_content = process_folder(rootId, item["id"])
+
+            meta_Data.extend(sub_meta)
+            docuemtn_Content.extend(sub_content)
             
         elif "file" in item:
             print("process file", item["name"])
-            #dprocess_file(item["id"])
+            result = process_file(rootId, item["id"])
+            if result:
+                meta, content = result
+                meta_Data.append(meta)
+                docuemtn_Content.append(content)
+
+    return meta_Data, docuemtn_Content
 
 
 def process_file(rootId, item):
@@ -166,27 +197,21 @@ def process_file(rootId, item):
         f"https://graph.microsoft.com/v1.0/sites/{it_ressort_site_id}/drives/{rootId}/items/{item}",
         headers=headers
     )
-    data = response.json()
-    metaData = SharePointFile(
-        id=data["id"],
-        site_id=data["parentReference"]["siteId"],
-        drive_id=data["parentReference"]["driveId"],
-        name=data["name"],
-        mime_type=data["file"]["mimeType"],
-        size=data["size"],
-        web_url=data["webUrl"],
-        created_at=data["createdDateTime"],
-        modified_at=data["lastModifiedDateTime"],
-        parent_id=data["parentReference"]["id"]
-    )
-    response = requests.get(
-        f"https://graph.microsoft.com/v1.0/sites/{it_ressort_site_id}/drives/{rootId}/items/{item}/content",
-        headers=headers
-    )
 
+    metaData = response.json()
+
+    existing = cursor.execute("""SELECT modified_at FROM documents WHERE id=?""", (metaData["id"],)).fetchone()
+    if existing and existing[0] == metaData["lastModifiedDateTime"]:
+        return
+    
+    response = requests.get(
+    f"https://graph.microsoft.com/v1.0/sites/{it_ressort_site_id}/drives/{rootId}/items/{item}/content",
+    headers=headers
+    )
+    
     text = ""
 
-    match metaData.mime_type:
+    match metaData["file"]["mimeType"]:
         case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             document = Document(BytesIO(response.content))
             paragraphs = []
@@ -241,13 +266,57 @@ def process_file(rootId, item):
             text = "\n".join(text_parts)
         case _:
             return
-            
+        
+    cursor.execute("""
+        INSERT INTO documents(
+            id,
+            site_id,
+            drive_id,
+            name,
+            mime_type,
+            size,
+            web_url,
+            created_at,
+            modified_at,
+            parent_id,
+            text
+        )
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
-    contentData = DocumentText(
-        file_id=metaData.id,
-        filename=metaData.name,
-        text=text
-    )
-    return metaData, contentData
+        ON CONFLICT(id) DO UPDATE SET
+        site_id=excluded.site_id,
+        drive_id=excluded.drive_id,
+        name=excluded.name,
+        mime_type=excluded.mime_type,
+        size=excluded.size,
+        web_url=excluded.web_url,
+        created_at=excluded.created_at,
+        modified_at=excluded.modified_at,
+        parent_id=excluded.parent_id,
+        text=excluded.text
+    """, (
+        metaData["id"],
+        metaData["parentReference"]["siteId"],
+        metaData["parentReference"]["driveId"],
+        metaData["name"],
+        metaData["file"]["mimeType"],
+        metaData["size"],
+        metaData["webUrl"],
+        metaData["createdDateTime"],
+        metaData["lastModifiedDateTime"],
+        metaData["parentReference"]["id"],
+        text
+    ))
+    connection.commit()
+    return
+'''
+meta, content = process_folder(it_ressort_drive_id, "01HODMHCXI62P3O77VIRCZ7O5ZZXHFUADK")
+for i in range(len(meta)):
+    print(meta[i].name)
+    print(content[i].text)
+'''
+file = process_file(it_ressort_drive_id, "01HODMHCWHUWZRJC72YNF2WTWTRQIOKKTJ")
 
-process_root(it_ressort_drive_id)
+
+
+connection.close()
