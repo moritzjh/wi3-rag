@@ -76,128 +76,117 @@ headers = {
     "Authorization": f"Bearer {access_token}",
 }
 
-response = requests.get(
-    "https://graph.microsoft.com/v1.0/sites?search=*",
-    headers=headers
-)
+sites_to_process = ["wi3.sharepoint.com,a76fe795-879d-4e8e-ba06-6a0735654277,a59f0326-2de6-4360-8a55-1d0c89783f0e",
+                    "wi3.sharepoint.com,9d8c4829-a660-4f44-b273-45fbd13909a0,85dc0cfe-9371-4772-a7b7-87fd1aae1813",
+                    "wi3.sharepoint.com,dfc191e5-f9cd-4870-b5c5-4a7f056c1710,a59f0326-2de6-4360-8a55-1d0c89783f0e",
+                    "wi3.sharepoint.com,3772b9f6-99b4-44f4-957c-bf1a8afeebf8,b9ce6d80-a819-4435-97b8-e2091452379b",
+                    "wi3.sharepoint.com,ee22c8d5-9932-421e-baa5-7d7c7af97e38,a59f0326-2de6-4360-8a55-1d0c89783f0e",
+                    "wi3.sharepoint.com,dceed059-1ad1-4c73-922d-aa2866e394ee,4e2acef0-78a2-4297-9b8a-983269dc38d4",
+                    "wi3.sharepoint.com,e368bee1-ac0e-428c-b945-4143122ab90c,58836373-e931-475a-8104-bfce36c58b27",
+                    "wi3.sharepoint.com,9b5d188c-29bd-4379-aad0-27b1765bdacf,94d9b353-de81-4687-8b3e-db92f4384512",
+                    "wi3.sharepoint.com,3aff7cab-2eed-4407-b34d-e0e290ed81ef,ccb943f3-43e5-4d0f-b41a-fbd192f368e1",
+                    "wi3.sharepoint.com,d76580e2-d0c7-4af7-a545-3c2fb4c6ec23,8af0b1db-dc2c-4c41-a095-79bec35bd456",
+                    "wi3.sharepoint.com,58ce2ee1-ffd1-4ed5-ae53-062a52aed104,8e063c0b-9e4b-4f72-9cfe-562dead72133",
+                    "wi3.sharepoint.com,d9671191-fdd2-4104-aba3-f56112fffd74,d6045b5d-5dc7-4ae5-a9c0-e786c21606de",
+                    "wi3.sharepoint.com,489d23a9-8f6d-4b9e-9fdf-0f9a6b0fc04d,ccb943f3-43e5-4d0f-b41a-fbd192f368e1",
+                    "wi3.sharepoint.com,563a9c96-af9c-4d26-85ba-8cf9e7e2bde4,ccb943f3-43e5-4d0f-b41a-fbd192f368e1",
+                    "wi3.sharepoint.com,f0021f9d-7332-4812-a3f3-ab410e06aabc,a59f0326-2de6-4360-8a55-1d0c89783f0e",
+                    "wi3.sharepoint.com,ecdc38c6-24ca-4336-b661-c755025619fe,c394f607-f582-42e0-b859-61af215981ea",
+                    "wi3.sharepoint.com,f4271222-fe3b-4379-9fc7-994559d55642,787f9249-8168-430f-9ac7-564ee0b8b3e5",
+                    "wi3.sharepoint.com,22f9755f-6106-473c-b67a-39a4a235364c,cad904b1-213e-468b-a2eb-44926d5581c2",
+                    "wi3.sharepoint.com,fa8f255e-926c-40af-b9d7-7fb16d0447e3,df2f0601-4214-4e1c-bf69-d7b2f714d85",
+                    "wi3.sharepoint.com,ae77b56d-7128-4a29-a185-b01625476b0d,5f385d5c-0017-4e13-8463-c399bf3b26f7",
+                    "wi3.sharepoint.com,a5c095dc-af5e-4645-80e7-12fe8dba9068,b445c790-280c-4c02-b258-3a39f0e268ba",
+                    "wi3.sharepoint.com,a9bf53c5-fb96-48ee-9ad2-f29ea4252cff,0bb49602-528b-47d4-8d64-3947892413de",
+                    "wi3.sharepoint.com,616f7cb9-f4b8-4904-b119-8ae56f593289,5f385d5c-0017-4e13-8463-c399bf3b26f7",
+                    "wi3.sharepoint.com,729cb4c5-92d2-4645-80e9-dcf9ea517ddd,5f385d5c-0017-4e13-8463-c399bf3b26f7",
+                    "wi3.sharepoint.com,d4377178-2910-484f-a942-0f19160dddf4,5fb4d46e-8a1c-4507-952b-3a5609f13760"
+                    ]
+def get_all_Sites():
+    url = "https://graph.microsoft.com/v1.0/sites?search=*"
+    sites = []
 
-print(response.status_code)
-#print(response.text)
+    while url:
+        response = requests.get(
+                url,
+                headers=headers
+            )
+        response.raise_for_status()
+        data = response.json()
+        for site in data.get("value", []):
+            sites.append(site["id"])
 
-it_ressort_site_id = "wi3.sharepoint.com,ee22c8d5-9932-421e-baa5-7d7c7af97e38,a59f0326-2de6-4360-8a55-1d0c89783f0e"
+        url = data.get("@odata.nextLink")
+    return sites
 
-response = requests.get(
-    f"https://graph.microsoft.com/v1.0/sites/{it_ressort_site_id}/drives",
-    headers=headers
-)
-print(response.status_code)
-#print(response.text)
+def check_if_sites_exists(sites_list):
+    all_sites = get_all_Sites()
+    exisiting_sites = set(all_sites)
 
-it_ressort_drive_id = "b!1cgi7jKZHkK6pX18evl-OCYDn6XmLWBDilUdDIl4Pw5jmHe4bh3yQpgHh_5Nhor2"
+    return [site_id for site_id in sites_list if site_id in exisiting_sites]
 
-response = requests.get(
-    f"https://graph.microsoft.com/v1.0/sites/{it_ressort_site_id}/drives/{it_ressort_drive_id}/root/children",
-    headers=headers
-)
-print(response.status_code)
-#print(response.text)
-'''
-strategy_days_item_id = "01HODMHCWHUWZRJC72YNF2WTWTRQIOKKTJ"
-response = requests.get(
-    f"https://graph.microsoft.com/v1.0/sites/{it_ressort_site_id}/drives/{it_ressort_drive_id}/items/{strategy_days_item_id}",
-    headers=headers
-)
-print(response.status_code)
-#print(response.text)
 
-data = response.json()
-#print(data.keys())
 
-strategy_meta = SharePointFile(
-    id=data["id"],
-    site_id=data["parentReference"]["siteId"],
-    drive_id=data["parentReference"]["driveId"],
-    name=data["name"],
-    mime_type=data["file"]["mimeType"],
-    size=data["size"],
-    web_url=data["webUrl"],
-    created_at=data["createdDateTime"],
-    modified_at=data["lastModifiedDateTime"],
-    parent_id=data["parentReference"]["id"]
-)
-#print(strategy_meta)
+def process_all_sites(sites_list):
+    for site in sites_list:
+        response = requests.get(
+            f"https://graph.microsoft.com/v1.0/sites/{site}/drives",
+            headers=headers
+        )
+        response.raise_for_status()
+        drives = response.json()["value"]
+        for drive in drives:
+            if drive.get("name") == "Documents":
+                process_root(site, drive["id"])
+                break
+    return
 
-response = requests.get(
-    f"https://graph.microsoft.com/v1.0/sites/{it_ressort_site_id}/drives/{it_ressort_drive_id}/items/{strategy_days_item_id}/content",
-    headers=headers
-)
+def process_root(siteId, driveId):
+    url = f"https://graph.microsoft.com/v1.0/sites/{siteId}/drives/{driveId}/root/children"
+    while url:
+        response = requests.get(
+            url,
+            headers=headers
+        )
+        response.raise_for_status()
+        data = response.json()
+        for item in data.get("value", []):
+            if "folder" in item:
+                print("Ordner:", item["name"])
+                process_folder(siteId, driveId, item["id"])
 
-print(response.status_code)
-
-document = Document(BytesIO(response.content))
-
-paragraphs = []
-for paragraph in document.paragraphs:
-    if paragraph.text.strip():
-        paragraphs.append(paragraph.text)
-
-text = "\n".join(paragraphs)
-
-strategy_doc = DocumentText(
-    file_id=strategy_meta.id,
-    filename=strategy_meta.name,
-    text=text
-)
-print(strategy_doc)
-'''
-def process_root(rootId):
-    response = requests.get(
-        f"https://graph.microsoft.com/v1.0/sites/{it_ressort_site_id}/drives/{rootId}/root/children",
-        headers=headers
-    )
-    data = response.json()["value"]
-    for item in data:
-        if "folder" in item:
-            print("Ordner:", item["name"])
-            process_folder(rootId, item["id"])
-
-        elif "file" in item:
-            print("Datei:", item["name"])
-            process_file(rootId, item["id"])
+            elif "file" in item:
+                print("Datei:", item["name"])
+                process_file(siteId, driveId, item["id"])
+        url = data.get("@odata.nextLink")
     
-def process_folder(rootId, folderId):
-    meta_Data = []
-    docuemtn_Content = []
+def process_folder(siteId, driveId, folderId):
+    url = f"https://graph.microsoft.com/v1.0/sites/{siteId}/drives/{driveId}/items/{folderId}/children"
+
+    while url:
+        response = requests.get(
+            url,
+            headers=headers
+        )
+        response.raise_for_status()
+        data = response.json()
+        for item in data.get("value", []):
+            if "folder" in item:
+                print("process folder", item["name"])
+                process_folder(siteId, driveId, item["id"])
+  
+            elif "file" in item:
+                print("process file", item["name"])
+                process_file(siteId, driveId, item["id"])
+        url = data.get("@odata.nextLink")
+
+
+def process_file(siteId, driveId, item):
     response = requests.get(
-        f"https://graph.microsoft.com/v1.0/sites/{it_ressort_site_id}/drives/{rootId}/items/{folderId}/children",
+        f"https://graph.microsoft.com/v1.0/sites/{siteId}/drives/{driveId}/items/{item}",
         headers=headers
     )
-    data = response.json()["value"]
-    for item in data:
-        if "folder" in item:
-            print("process folder", item["name"])
-            sub_meta, sub_content = process_folder(rootId, item["id"])
-
-            meta_Data.extend(sub_meta)
-            docuemtn_Content.extend(sub_content)
-            
-        elif "file" in item:
-            print("process file", item["name"])
-            result = process_file(rootId, item["id"])
-            if result:
-                meta, content = result
-                meta_Data.append(meta)
-                docuemtn_Content.append(content)
-
-    return meta_Data, docuemtn_Content
-
-
-def process_file(rootId, item):
-    response = requests.get(
-        f"https://graph.microsoft.com/v1.0/sites/{it_ressort_site_id}/drives/{rootId}/items/{item}",
-        headers=headers
-    )
-
+    response.raise_for_status()
     metaData = response.json()
 
     existing = cursor.execute("""SELECT modified_at FROM documents WHERE id=?""", (metaData["id"],)).fetchone()
@@ -205,10 +194,10 @@ def process_file(rootId, item):
         return
     
     response = requests.get(
-    f"https://graph.microsoft.com/v1.0/sites/{it_ressort_site_id}/drives/{rootId}/items/{item}/content",
+    f"https://graph.microsoft.com/v1.0/sites/{siteId}/drives/{driveId}/items/{item}/content",
     headers=headers
     )
-    
+    response.raise_for_status()
     text = ""
 
     match metaData["file"]["mimeType"]:
@@ -309,14 +298,5 @@ def process_file(rootId, item):
     ))
     connection.commit()
     return
-'''
-meta, content = process_folder(it_ressort_drive_id, "01HODMHCXI62P3O77VIRCZ7O5ZZXHFUADK")
-for i in range(len(meta)):
-    print(meta[i].name)
-    print(content[i].text)
-'''
-file = process_file(it_ressort_drive_id, "01HODMHCWHUWZRJC72YNF2WTWTRQIOKKTJ")
-
-
 
 connection.close()
