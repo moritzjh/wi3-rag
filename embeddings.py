@@ -1,14 +1,18 @@
 import sqlite3
 
 connection = sqlite3.connect("sharpoint.db")
-curosr = connection.cursor()
+cursor = connection.cursor()
 
-curosr.execute("""
+cursor.execute("""
     CREATE TABLE IF NOT EXISTS chunks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         document_id TEXT NOT NULL,
         chunk_index INTEGER NOT NULL,
         text TEXT NOT NULL,
+        filename TEXT,
+        web_url TEXT,
+        mime_type TEXT,
+        modified_at TEXT,
         FOREIGN KEY (document_id) REFERENCES documents(id)
     )
 """)
@@ -16,7 +20,7 @@ curosr.execute("""
 connection.commit()
 
 
-def chunk_text(text, chunk_size=200, overlap=40):
+def chunk_text(text, chunk_size=100, overlap=40):
     words = text.split()
 
     chunks=[]
@@ -30,30 +34,36 @@ def chunk_text(text, chunk_size=200, overlap=40):
     return chunks
 
 def process_documents():
-    documents = curosr.execute("""
-        SELECT id, text from documents
+    documents = cursor.execute("""
+        SELECT id, text, name, web_url, mime_type, modified_at from documents
     """).fetchall()
 
-    for document_id, text in documents:
-        curosr.execute("""
+    for document_id, text, name, web_url, mime_type, modified_at in documents:
+        cursor.execute("""
             DELETE FROM chunks
             WHERE document_id = ?
         """, (document_id,))
             
         chunks = chunk_text(text)
         for i in range(len(chunks)):
-            curosr.execute("""
+            cursor.execute("""
             INSERT INTO chunks(
                 document_id,
                 chunk_index,
-                text 
+                text,
+                filename,
+                web_url,
+                mime_type,
+                modified_at 
             )
-            VALUES(?, ?, ?)
+            VALUES(?, ?, ?, ?, ?, ?, ?)
             """, (
                 document_id,
                 i,
-                chunks[i]
+                chunks[i],
+                name,
+                web_url,
+                mime_type,
+                modified_at
             ))
         connection.commit()
-
-process_documents()

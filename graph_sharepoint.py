@@ -10,6 +10,7 @@ from pypdf import PdfReader
 from openpyxl import load_workbook
 from pptx import Presentation
 import sqlite3
+import embeddings
 
 @dataclass
 class SharePointFile:
@@ -65,16 +66,11 @@ app = ConfidentialClientApplication(
     client_credential=CLIENT_SECRET
 )
 
-result = app.acquire_token_for_client(scopes=SCOPES)
-
-if "access_token" in result:
-    access_token = result["access_token"]
-else:
-    raise Exception("No Access Token found")
-
-headers = {
-    "Authorization": f"Bearer {access_token}",
-}
+def get_headers():
+    result = app.acquire_token_for_client(scopes=SCOPES)
+    if "access_token" not in result:
+        raise Exception("No AccessToken found")
+    return {"Authorization": f"Bearer {result['access_token']}"}
 
 sites_to_process = ["wi3.sharepoint.com,a76fe795-879d-4e8e-ba06-6a0735654277,a59f0326-2de6-4360-8a55-1d0c89783f0e",
                     "wi3.sharepoint.com,9d8c4829-a660-4f44-b273-45fbd13909a0,85dc0cfe-9371-4772-a7b7-87fd1aae1813",
@@ -129,14 +125,16 @@ def check_if_sites_exists(sites_list):
 
 def process_all_sites(sites_list):
     for site in sites_list:
+        print("porcess site")
         response = requests.get(
             f"https://graph.microsoft.com/v1.0/sites/{site}/drives",
-            headers=headers
+            headers=get_headers()
         )
         response.raise_for_status()
         drives = response.json()["value"]
         for drive in drives:
-            if drive.get("name") == "Documents":
+            if drive.get("name") == "Dokumente":
+                print("process root")
                 process_root(site, drive["id"])
                 break
     return
@@ -146,7 +144,7 @@ def process_root(siteId, driveId):
     while url:
         response = requests.get(
             url,
-            headers=headers
+            headers=get_headers()
         )
         response.raise_for_status()
         data = response.json()
@@ -166,7 +164,7 @@ def process_folder(siteId, driveId, folderId):
     while url:
         response = requests.get(
             url,
-            headers=headers
+            headers=get_headers()
         )
         response.raise_for_status()
         data = response.json()
@@ -184,7 +182,7 @@ def process_folder(siteId, driveId, folderId):
 def process_file(siteId, driveId, item):
     response = requests.get(
         f"https://graph.microsoft.com/v1.0/sites/{siteId}/drives/{driveId}/items/{item}",
-        headers=headers
+        headers=get_headers()
     )
     response.raise_for_status()
     metaData = response.json()
@@ -195,66 +193,69 @@ def process_file(siteId, driveId, item):
     
     response = requests.get(
     f"https://graph.microsoft.com/v1.0/sites/{siteId}/drives/{driveId}/items/{item}/content",
-    headers=headers
+    headers=get_headers()
     )
     response.raise_for_status()
     text = ""
+    try:
+        match metaData["file"]["mimeType"]:
+            case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                document = Document(BytesIO(response.content))
+                paragraphs = []
+                for paragraph in document.paragraphs:
+                    if paragraph.text.strip():
+                        paragraphs.append(paragraph.text)
+                text = "\n".join(paragraphs)
 
-    match metaData["file"]["mimeType"]:
-        case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-            document = Document(BytesIO(response.content))
-            paragraphs = []
-            for paragraph in document.paragraphs:
-                if paragraph.text.strip():
-                    paragraphs.append(paragraph.text)
-            text = "\n".join(paragraphs)
+            case "application/pdf":
+                document = PdfReader(BytesIO(response.content))
+                text_parts = []
+                for page in document.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text_parts.append(page_text)
+                text = "\n".join(text_parts)
+        
+            case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+                document = load_workbook(BytesIO(response.content))
+                text_parts = []
+                for sheet in document.worksheets:
+                    text_parts.append(f"Sheet: {sheet.title}")
+                    rows = sheet.iter_rows(values_only=True)
+                    col_headers = next(rows, None)
 
-        case "application/pdf":
-            document = PdfReader(BytesIO(response.content))
-            text_parts = []
-            for page in document.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text_parts.append(page_text)
-            text = "\n".join(text_parts)
-    
-        case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-            document = load_workbook(BytesIO(response.content))
-            text_parts = []
-            for sheet in document.worksheets:
-                text_parts.append(f"Sheet: {sheet.title}")
-                rows = sheet.iter_rows(values_only=True)
-                col_headers = next(rows, None)
+                    if not col_headers:
+                        continue
+                    for row in rows:
+                        values = []
 
-                if not col_headers:
-                    continue
-                for row in rows:
-                    values = []
+                        for header, value in zip(col_headers,row):
+                            if value is not None:
+                                values.append(f"{header}: {value}")
+                        if values:
+                            text_parts.append(" | ".join(values))
+                    text_parts.append("")
+                text = "\n".join(text_parts)
 
-                    for header, value in zip(col_headers,row):
-                        if value is not None:
-                            values.append(f"{header}: {value}")
-                    if values:
-                        text_parts.append(" | ".join(values))
-                text_parts.append("")
-            text = "\n".join(text_parts)
+            case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+                document = Presentation(BytesIO(response.content))
+                text_parts = []
+                for slide_number, slide in enumerate(document.slides, start=1):
+                    text_parts.append(f"Slide: {slide_number}")
 
-        case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-            document = Presentation(BytesIO(response.content))
-            text_parts = []
-            for slide_number, slide in enumerate(document.slides, start=1):
-                text_parts.append(f"Slide: {slide_number}")
+                    for shape in slide.shapes:
+                        if shape.has_text_frame:
+                            shape_text = shape.text.strip()
 
-                for shape in slide.shapes:
-                    if shape.has_text_frame:
-                        shape_text = shape.text.strip()
-
-                        if shape_text:
-                            text_parts.append(shape_text)
-                text_parts.append("")
-            text = "\n".join(text_parts)
-        case _:
-            return
+                            if shape_text:
+                                text_parts.append(shape_text)
+                    text_parts.append("")
+                text = "\n".join(text_parts)
+            case _:
+                return
+    except Exception as e:
+        print(f"Fehler beim Verarbeiten von {metaData['name']}: {e}")
+        return
         
     cursor.execute("""
         INSERT INTO documents(
@@ -298,5 +299,15 @@ def process_file(siteId, driveId, item):
     ))
     connection.commit()
     return
+
+
+'''
+sites = check_if_sites_exists(sites_to_process)
+for site in sites:
+    print(site)
+'''
+
+process_all_sites(check_if_sites_exists(sites_to_process))
+embeddings.process_documents()
 
 connection.close()
