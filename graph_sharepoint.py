@@ -10,7 +10,8 @@ from pypdf import PdfReader
 from openpyxl import load_workbook
 from pptx import Presentation
 import sqlite3
-import embeddings
+import chunking
+import time
 
 @dataclass
 class SharePointFile:
@@ -72,6 +73,22 @@ def get_headers():
         raise Exception("No AccessToken found")
     return {"Authorization": f"Bearer {result['access_token']}"}
 
+def safe_get(url, headers, timeout=30, retries=3):
+    for attempt in range(retries):
+        try:
+            response = requests.get(
+                url,
+                headers=headers,
+                timeout=timeout
+            )
+            response.raise_for_status()
+            return response
+        except requests.exceptions.RequestException as e:
+            if attempt < retries - 1:
+                time.sleep(5)
+            else:
+                raise
+
 sites_to_process = ["wi3.sharepoint.com,a76fe795-879d-4e8e-ba06-6a0735654277,a59f0326-2de6-4360-8a55-1d0c89783f0e",
                     "wi3.sharepoint.com,9d8c4829-a660-4f44-b273-45fbd13909a0,85dc0cfe-9371-4772-a7b7-87fd1aae1813",
                     "wi3.sharepoint.com,dfc191e5-f9cd-4870-b5c5-4a7f056c1710,a59f0326-2de6-4360-8a55-1d0c89783f0e",
@@ -103,11 +120,7 @@ def get_all_Sites():
     sites = []
 
     while url:
-        response = requests.get(
-                url,
-                headers=headers
-            )
-        response.raise_for_status()
+        response = safe_get(url, get_headers())
         data = response.json()
         for site in data.get("value", []):
             sites.append(site["id"])
@@ -126,11 +139,7 @@ def check_if_sites_exists(sites_list):
 def process_all_sites(sites_list):
     for site in sites_list:
         print("porcess site")
-        response = requests.get(
-            f"https://graph.microsoft.com/v1.0/sites/{site}/drives",
-            headers=get_headers()
-        )
-        response.raise_for_status()
+        response = safe_get(f"https://graph.microsoft.com/v1.0/sites/{site}/drives", get_headers())
         drives = response.json()["value"]
         for drive in drives:
             if drive.get("name") == "Dokumente":
@@ -142,11 +151,7 @@ def process_all_sites(sites_list):
 def process_root(siteId, driveId):
     url = f"https://graph.microsoft.com/v1.0/sites/{siteId}/drives/{driveId}/root/children"
     while url:
-        response = requests.get(
-            url,
-            headers=get_headers()
-        )
-        response.raise_for_status()
+        response = safe_get(url, get_headers())
         data = response.json()
         for item in data.get("value", []):
             if "folder" in item:
@@ -162,11 +167,7 @@ def process_folder(siteId, driveId, folderId):
     url = f"https://graph.microsoft.com/v1.0/sites/{siteId}/drives/{driveId}/items/{folderId}/children"
 
     while url:
-        response = requests.get(
-            url,
-            headers=get_headers()
-        )
-        response.raise_for_status()
+        response = safe_get(url, get_headers())
         data = response.json()
         for item in data.get("value", []):
             if "folder" in item:
@@ -180,22 +181,24 @@ def process_folder(siteId, driveId, folderId):
 
 
 def process_file(siteId, driveId, item):
-    response = requests.get(
-        f"https://graph.microsoft.com/v1.0/sites/{siteId}/drives/{driveId}/items/{item}",
-        headers=get_headers()
-    )
-    response.raise_for_status()
+    response = safe_get(f"https://graph.microsoft.com/v1.0/sites/{siteId}/drives/{driveId}/items/{item}", get_headers())
     metaData = response.json()
 
     existing = cursor.execute("""SELECT modified_at FROM documents WHERE id=?""", (metaData["id"],)).fetchone()
     if existing and existing[0] == metaData["lastModifiedDateTime"]:
         return
+
+    supported_types = {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    }
+
+    if metaData["file"]["mimeType"] not in supported_types:
+        return
     
-    response = requests.get(
-    f"https://graph.microsoft.com/v1.0/sites/{siteId}/drives/{driveId}/items/{item}/content",
-    headers=get_headers()
-    )
-    response.raise_for_status()
+    response = safe_get(f"https://graph.microsoft.com/v1.0/sites/{siteId}/drives/{driveId}/items/{item}/content", get_headers())
     text = ""
     try:
         match metaData["file"]["mimeType"]:
@@ -301,13 +304,7 @@ def process_file(siteId, driveId, item):
     return
 
 
-'''
-sites = check_if_sites_exists(sites_to_process)
-for site in sites:
-    print(site)
-'''
-
 process_all_sites(check_if_sites_exists(sites_to_process))
-embeddings.process_documents()
+chunking.process_documents()
 
 connection.close()

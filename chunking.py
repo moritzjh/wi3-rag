@@ -67,3 +67,6 @@ def process_documents():
                 modified_at
             ))
         connection.commit()
+process_documents()
+
+connection.close()
