@@ -14,7 +14,7 @@ through an MCP server.
    calls into `chunking.py`.
 2. **`chunking.py`** – Splits each document's text into overlapping word chunks and
    stores them in the `chunks` table of `sharpoint.db`.
-3. **`ollama.py`** – Embeds each chunk with a local Ollama model (`bge-m3` by
+3. **`embed_and_search.py`** – Embeds each chunk with a local Ollama model (`bge-m3` by
    default) and upserts the vectors into a Qdrant collection (`wi3_docs`). Also
    contains a simple `search()` helper for ad-hoc querying from the CLI.
 4. **`rag_mcp.py`** – An MCP server that exposes a `search_wi3_knowledge` tool,
@@ -51,7 +51,7 @@ cp .env.example .env         # then fill in your Azure AD values
 python graph_sharepoint.py
 
 # 2. Embed the chunks and upsert them into Qdrant (also runs a sample search)
-python ollama.py
+python embed_and_search.py
 
 # 3. Start the MCP server
 python rag_mcp.py
